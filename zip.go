@@ -1,7 +1,6 @@
 package archiver
 
 import (
-	"archive/zip"
 	"bytes"
 	"context"
 	"errors"
@@ -14,6 +13,7 @@ import (
 	"github.com/dsnet/compress/bzip2"
 	"github.com/klauspost/compress/zstd"
 	"github.com/ulikunitz/xz"
+	"github.com/yeka/zip"
 	"golang.org/x/text/encoding"
 	"golang.org/x/text/encoding/charmap"
 	"golang.org/x/text/encoding/japanese"
@@ -186,6 +186,10 @@ func (z Zip) Extract(ctx context.Context, sourceArchive io.Reader, pathsInArchiv
 			return err // honor context cancellation
 		}
 
+		if f.IsEncrypted() {
+			return zip.ErrAuthentication
+		}
+
 		// ensure filename and comment are UTF-8 encoded (issue #147 and PR #305)
 		z.decodeText(&f.FileHeader)
 
@@ -219,20 +223,15 @@ func (z Zip) Extract(ctx context.Context, sourceArchive io.Reader, pathsInArchiv
 	return nil
 }
 
-// decodeText decodes the name and comment fields from hdr into UTF-8.
-// It is a no-op if the text is already UTF-8 encoded or if z.TextEncoding
-// is not specified.
 func (z Zip) decodeText(hdr *zip.FileHeader) {
-	if hdr.NonUTF8 && z.TextEncoding != "" {
-		filename, err := decodeText(hdr.Name, z.TextEncoding)
+	filename, err := decodeText(hdr.Name, z.TextEncoding)
+	if err == nil {
+		hdr.Name = filename
+	}
+	if hdr.Comment != "" {
+		comment, err := decodeText(hdr.Comment, z.TextEncoding)
 		if err == nil {
-			hdr.Name = filename
-		}
-		if hdr.Comment != "" {
-			comment, err := decodeText(hdr.Comment, z.TextEncoding)
-			if err == nil {
-				hdr.Comment = comment
-			}
+			hdr.Comment = comment
 		}
 	}
 }
